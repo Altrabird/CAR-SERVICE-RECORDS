@@ -23,7 +23,8 @@ let user;             // signed-in Supabase user
 
 // ---------- views ----------
 
-const authView = () => `
+const authView = () => `<section class="auth">
+  <img src="icons/icon.svg" alt="" width="72" height="72">
   <h1>Welcome</h1>
   <p class="muted">Sign in to see your cars on any phone or computer.</p>
   <form id="auth">
@@ -31,7 +32,7 @@ const authView = () => `
     <label>Password<input name="password" type="password" minlength="6" autocomplete="current-password" required></label>
     <button class="btn primary block" value="in">Sign in</button>
     <button class="btn block" value="up">Create account</button>
-  </form>`;
+  </form></section>`;
 
 function home(_, cars, records) {
   const due = cars.flatMap(c => suggestions(c, recsOf(records, c.id)).filter(s => s.status !== 'ok'));

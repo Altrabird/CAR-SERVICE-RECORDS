@@ -1,5 +1,5 @@
 // Offline app shell. Bump VERSION when shipping changes.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'db.js', 'vendor/supabase.js', 'schedule.js', 'icons.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
   'vendor/fonts/fira-sans-latin-400-normal.woff2', 'vendor/fonts/fira-sans-latin-600-normal.woff2',
@@ -11,7 +11,8 @@ self.addEventListener('activate', e => e.waitUntil(
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   // Network first so updates show up, cache as offline fallback. Supabase API calls are cross-origin and never cached.
-  e.respondWith(fetch(e.request).then(res => {
+  // no-cache: revalidate with the server so GitHub Pages' 10-minute HTTP cache can't serve a stale file after an update.
+  e.respondWith(fetch(e.request.url, { cache: 'no-cache' }).then(res => {
     const copy = res.clone();
     if (res.ok) caches.open(VERSION).then(c => c.put(e.request, copy));
     return res;

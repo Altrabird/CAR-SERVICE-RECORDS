@@ -34,6 +34,11 @@ header .btn { min-height: 36px; background: var(--cta); color: #fff; border: 0; 
 body { min-height: 100dvh; display: flex; flex-direction: column; } /* keeps the footer at the bottom on short pages */
 main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 16px 16px 32px; }
 footer { text-align: center; font-size: .85rem; color: var(--muted); padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+main:has(> .auth) { display: flex; flex-direction: column; justify-content: center; }
+.auth { width: 100%; max-width: 420px; margin: 0 auto; text-align: center; }
+.auth img { border-radius: 16px; }
+.auth h1 { justify-content: center; }
+.auth form { text-align: left; margin-top: 8px; }
 footer strong { color: var(--text); font-weight: 600; }
 main > * { animation: enter .25s ease-out both; }
 @keyframes enter { from { opacity: 0; transform: translateY(6px); } }
