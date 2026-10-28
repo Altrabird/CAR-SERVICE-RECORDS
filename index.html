@@ -3,18 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Track car services, bills, workshops and upcoming maintenance for all your cars.">
+  <meta name="theme-color" content="#1E293B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CarService">
   <title>Car Service Records</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="vendor/fonts/fira-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <a href="#/" class="brand"><img src="icon.svg" alt="" width="28" height="28"> Car Service Records</a>
+    <a href="#/" class="brand"><img src="icons/icon.svg" alt="" width="32" height="32"> Car Service Records</a>
+    <button id="install" class="btn" data-act="install" hidden>Install app</button>
   </header>
-  <main id="app" aria-live="polite"></main>
+  <main id="app" aria-live="polite"><div class="empty"><p>Loading…</p></div></main>
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,9 +1,28 @@
 {
+  "id": "./",
   "name": "Car Service Records",
   "short_name": "CarService",
-  "start_url": ".",
+  "description": "Track car services, bills, workshops and upcoming maintenance for all your cars.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
-  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1E293B",
+  "categories": ["lifestyle", "productivity", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Add service", "url": "./#/new", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "screenshots": [
+    { "src": "screenshots/home.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "All cars and reminders" },
+    { "src": "screenshots/car.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Car dashboard with maintenance suggestions" },
+    { "src": "screenshots/record.png", "sizes": "780x1688", "type": "image/png", "form_factor": "narrow", "label": "Service record with bill and workshop map" },
+    { "src": "screenshots/wide.png", "sizes": "2560x1600", "type": "image/png", "form_factor": "wide", "label": "Car dashboard" }
+  ]
 }

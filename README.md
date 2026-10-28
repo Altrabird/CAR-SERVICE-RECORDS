@@ -1,6 +1,8 @@
 # Car Service Records
 
-Mobile-first, installable web app (PWA) for tracking car maintenance. No server, no build step, no API keys. Data stays on the device (IndexedDB).
+Mobile-first, installable web app (PWA) for tracking car maintenance. No server, no build step, no API keys. Data stays on the device in a **SQLite** database.
+
+![Car dashboard](screenshots/wide.png)
 
 ## Features
 - **Multiple cars**: nickname, plate, make/model/year, odometer.
@@ -11,7 +13,22 @@ Mobile-first, installable web app (PWA) for tracking car maintenance. No server,
 - **Reminders**:
   - 📅 adds a reminder to the phone calendar (`.ics` file, alerts 1 day before). This is the reliable option because it works when the app is closed.
   - 🔔 shows a notification for due items once a day, when the app is opened.
-- **Backup / restore** as a JSON file, photos included.
+- **Backup / restore** as a JSON file, photos included, plus **Export SQLite** (open it in DB Browser for SQLite or the `sqlite3` CLI).
+- **Installable PWA**: works offline, with PNG + maskable icons, store screenshots, an "Add service" shortcut and an in-app Install button (on iPhone: Share, then Add to Home Screen).
+
+## Database (SQL)
+The app uses the official SQLite WebAssembly build (`vendor/sqlite`), run in a Web Worker (`db-worker.js`) and saved to the browser's Origin Private File System (`opfs-sahpool`, which needs no special server headers). Schema:
+
+```sql
+cars    (id PK, name, plate, make, model, year, odometer, odometer_date)
+records (id PK, car_id → cars ON DELETE CASCADE, date, odometer, workshop, location, notes)
+items   (record_id → records ON DELETE CASCADE, pos, type, note, cost)
+photos  (record_id → records ON DELETE CASCADE, pos, mime, data BLOB)
+```
+Deleting a car removes its records, items and photos through the cascades. All queries are in `db.js`. Only one tab can have the database open at a time; a second tab shows a "close other tabs" message rather than risk losing data.
+
+## Design
+The design system came from the UI UX Pro Max skill (automotive palette): slate `#1E293B` primary, action red `#DC2626` buttons, Fira Sans text with Fira Code numbers, Lucide SVG icons, 44px touch targets, visible focus, light and dark themes, and reduced motion when the phone asks for it. Fonts and icons are self-hosted so the app works offline.
 
 ## Run
 ```sh
@@ -26,5 +43,7 @@ Open http://localhost:8080. Camera, location and notifications need HTTPS or loc
 | `index.html`, `style.css` | Shell and styles (light/dark) |
 | `app.js` | Views, routing, forms, photos, maps, reminders, backup |
 | `schedule.js` | Maintenance intervals, suggestions, calendar export (unit-tested) |
-| `db.js` | IndexedDB storage |
-| `sw.js`, `manifest.webmanifest` | Offline support and installability |
+| `db.js`, `db-worker.js` | SQLite schema and queries |
+| `icons.js` | Lucide icons (ISC) |
+| `sw.js`, `manifest.webmanifest`, `icons/`, `screenshots/` | Offline support and installability |
+| `vendor/` | SQLite WASM 3.50.4 (public domain), Fira fonts (OFL) |
