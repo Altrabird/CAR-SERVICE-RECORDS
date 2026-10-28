@@ -1,5 +1,7 @@
 # Car Service Records
 
+Developed by **Harsidi Junick**.
+
 Mobile-first, installable web app (PWA) for tracking car maintenance. No build step. Data is stored in **Supabase** (Postgres) and syncs across devices.
 
 ![Car dashboard](screenshots/wide.png)
