@@ -19,8 +19,19 @@ const photoUrl = b => URL.createObjectURL(b); // shortcut: object URLs aren't re
 
 let draftPhotos = []; // photos attached in the open record form
 let installEvent;     // deferred beforeinstallprompt (Chrome/Android/Edge)
+let user;             // signed-in Supabase user
 
 // ---------- views ----------
+
+const authView = () => `
+  <h1>Welcome</h1>
+  <p class="muted">Sign in to see your cars on any phone or computer.</p>
+  <form id="auth">
+    <label>Email<input name="email" type="email" autocomplete="email" required></label>
+    <label>Password<input name="password" type="password" minlength="6" autocomplete="current-password" required></label>
+    <button class="btn primary block" value="in">Sign in</button>
+    <button class="btn block" value="up">Create account</button>
+  </form>`;
 
 function home(_, cars, records) {
   const due = cars.flatMap(c => suggestions(c, recsOf(records, c.id)).filter(s => s.status !== 'ok'));
@@ -40,10 +51,10 @@ function home(_, cars, records) {
       <button class="btn" data-act="notify">${icon('bell')} Enable notifications</button>
       <button class="btn" data-act="export">${icon('download')} Backup (JSON)</button>
       <label class="btn">${icon('upload')} Restore backup<input type="file" accept="application/json" id="import" hidden></label>
-      <button class="btn" data-act="export-sql">${icon('database')} Export SQLite</button>
+      <button class="btn" data-act="signout">Sign out</button>
     </div>
     ${ios ? `<p class="hint">${icon('smartphone')} To install on iPhone: tap Share, then “Add to Home Screen”.</p>` : ''}
-    <p class="hint">Data is stored in a SQLite database on this device. Back up regularly, especially before clearing browser data.</p>`;
+    <p class="hint">${icon('database')} Signed in as ${esc(user.email)}. Your data is saved in the cloud and syncs across devices.</p>`;
 }
 
 function carCard(c, recs) {
@@ -179,6 +190,8 @@ const notFound = () => '<div class="empty"><p>Not found. <a href="#/">Go home</a
 // ---------- router ----------
 
 async function route() {
+  user = (await db.session())?.user;
+  if (!user) { app.innerHTML = authView(); return { cars: [], records: [] }; }
   const [, page, id] = location.hash.split('/');
   const [cars, records, pics] = await Promise.all([db.cars(), db.records(), page === 'record' || page === 'edit' ? db.photos(id) : []]);
   const views = {
@@ -223,7 +236,12 @@ document.addEventListener('submit', async e => {
   const btn = f.querySelector('button:not([type=button])');
   btn.disabled = true; // prevent double-saves while the database writes
   try {
-    if (f.id === 'car') {
+    if (f.id === 'auth') {
+      if (e.submitter?.value === 'up') {
+        const { session } = await db.signUp(data.email, data.password);
+        if (!session) alert('Account created. Check your email and tap the confirmation link, then sign in.');
+      } else await db.signIn(data.email, data.password);
+    } else if (f.id === 'car') {
       const old = (await db.cars()).find(c => c.id === f.dataset.id) || {};
       const odometer = +data.odometer || 0;
       await db.saveCar({ ...data, id: f.dataset.id, odometer, odometerDate: odometer === old.odometer ? old.odometerDate : iso(new Date()) });
@@ -244,7 +262,7 @@ document.addEventListener('submit', async e => {
       route();
     }
   } catch (err) {
-    alert('Could not save: ' + err.message);
+    alert((f.id === 'auth' ? '' : 'Could not save: ') + err.message);
   } finally {
     btn.disabled = false;
   }
@@ -293,7 +311,7 @@ document.addEventListener('click', async e => {
     const recs = await Promise.all(records.map(async r => ({ ...r, photos: await Promise.all((await db.photos(r.id)).map(toDataUrl)) })));
     download(`car-service-backup-${iso(new Date())}.json`, JSON.stringify({ version: 2, cars, records: recs }), 'application/json');
   }
-  if (act === 'export-sql') download(`car-service-${iso(new Date())}.sqlite3`, await db.exportFile(), 'application/vnd.sqlite3');
+  if (act === 'signout' && confirm('Sign out of this device?')) await db.signOut();
   if (act === 'install' && installEvent) {
     installEvent.prompt();
     installEvent = null;
@@ -334,12 +352,15 @@ async function notifyDue({ cars, records }) {
 }
 
 function showError(err) {
-  app.innerHTML = `<div class="empty">${icon('triangle-alert')}<p><b>Could not open the database.</b><br>
-    If the app is open in another tab or window, close it and reload. Otherwise this browser may not support on-device storage (needs Chrome 108+, Safari 16.4+ or Firefox 111+).</p><small>${esc(err.message)}</small></div>`;
+  app.innerHTML = `<div class="empty">${icon('triangle-alert')}<p><b>Could not load your data.</b><br>
+    Check your internet connection and try again.</p><small>${esc(err.message)}</small>
+    <button class="btn block" onclick="location.reload()">Retry</button></div>`;
 }
 
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; document.getElementById('install').hidden = false; });
 addEventListener('hashchange', () => route().catch(showError));
+// Network calls can fail anywhere (delete, calendar, sign out); surface them instead of failing silently.
+addEventListener('unhandledrejection', e => alert(e.reason?.message || 'Something went wrong. Check your connection.'));
+db.onAuthChange(() => route().then(notifyDue, showError));
 navigator.serviceWorker?.register('sw.js');
-navigator.storage?.persist?.();
 route().then(notifyDue, showError);

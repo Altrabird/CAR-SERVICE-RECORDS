@@ -1,6 +1,6 @@
 # Car Service Records
 
-Mobile-first, installable web app (PWA) for tracking car maintenance. No server, no build step, no API keys. Data stays on the device in a **SQLite** database.
+Mobile-first, installable web app (PWA) for tracking car maintenance. No build step. Data is stored in **Supabase** (Postgres) and syncs across devices.
 
 ![Car dashboard](screenshots/wide.png)
 
@@ -13,22 +13,31 @@ Mobile-first, installable web app (PWA) for tracking car maintenance. No server,
 - **Reminders**:
   - 📅 adds a reminder to the phone calendar (`.ics` file, alerts 1 day before). This is the reliable option because it works when the app is closed.
   - 🔔 shows a notification for due items once a day, when the app is opened.
-- **Backup / restore** as a JSON file, photos included, plus **Export SQLite** (open it in DB Browser for SQLite or the `sqlite3` CLI).
-- **Installable PWA**: works offline, with PNG + maskable icons, store screenshots, an "Add service" shortcut and an in-app Install button (on iPhone: Share, then Add to Home Screen).
+- **Accounts**: sign in with email and password. Data and bill photos sync across all your devices.
+- **Backup / restore** as a JSON file, photos included. Restore also imports backups made by the earlier on-device version.
+- **Installable PWA**: app screens load offline (data needs internet), with PNG + maskable icons, store screenshots, an "Add service" shortcut and an in-app Install button (on iPhone: Share, then Add to Home Screen).
 
-## Database (SQL)
-The app uses the official SQLite WebAssembly build (`vendor/sqlite`), run in a Web Worker (`db-worker.js`) and saved to the browser's Origin Private File System (`opfs-sahpool`, which needs no special server headers). Schema:
+## Database (Supabase / Postgres)
+Data is stored in Supabase (project `zqsuxefvtgkizjoptqpq`, Singapore region), so it syncs across devices. Users sign in with email and password.
 
 ```sql
-cars    (id PK, name, plate, make, model, year, odometer, odometer_date)
-records (id PK, car_id → cars ON DELETE CASCADE, date, odometer, workshop, location, notes)
-items   (record_id → records ON DELETE CASCADE, pos, type, note, cost)
-photos  (record_id → records ON DELETE CASCADE, pos, mime, data BLOB)
+cars    (id PK, user_id → auth.users, name, plate, make, model, year, odometer, odometer_date)
+records (id PK, user_id, car_id, date, odometer, workshop, location, notes,
+         items jsonb,     -- [{type, note, cost}], saved together with the record in one request
+         photos text[])   -- paths in the private "bills" storage bucket
+         FK (car_id, user_id) → cars ON DELETE CASCADE
 ```
-Deleting a car removes its records, items and photos through the cascades. All queries are in `db.js`. Only one tab can have the database open at a time; a second tab shows a "close other tabs" message rather than risk losing data.
+- Row-level security on both tables, and on the `bills` bucket (`<user_id>/…` folders only), means each user can only read or change their own rows and photos.
+- The composite foreign key stops a record from being attached to another user's car.
+- The publishable key in `db.js` is meant to be public. Security comes from the rules above, not from hiding the key.
+- All queries live in `db.js`.
+
+### Supabase dashboard settings (one-time)
+- **Authentication → URL Configuration:** set **Site URL** to where the app is hosted (e.g. `https://<you>.github.io/car-service-records/`) and add the same URL under **Redirect URLs**. Email confirmation links open this address.
+- **Email confirmation:** the built-in email service only sends to members of your Supabase team. For other people to sign up, either turn off **Confirm email** (Authentication → Sign In / Providers → Email), or set up your own SMTP server under Authentication → Emails.
 
 ## Design
-The design system came from the UI UX Pro Max skill (automotive palette): slate `#1E293B` primary, action red `#DC2626` buttons, Fira Sans text with Fira Code numbers, Lucide SVG icons, 44px touch targets, visible focus, light and dark themes, and reduced motion when the phone asks for it. Fonts and icons are self-hosted so the app works offline.
+The design system came from the UI UX Pro Max skill (automotive palette): slate `#1E293B` primary, action red `#DC2626` buttons, Fira Sans text with Fira Code numbers, Lucide SVG icons, 44px touch targets, visible focus, light and dark themes, and reduced motion when the phone asks for it. Fonts and icons are self-hosted.
 
 ## Run
 ```sh
@@ -43,7 +52,7 @@ Open http://localhost:8080. Camera, location and notifications need HTTPS or loc
 | `index.html`, `style.css` | Shell and styles (light/dark) |
 | `app.js` | Views, routing, forms, photos, maps, reminders, backup |
 | `schedule.js` | Maintenance intervals, suggestions, calendar export (unit-tested) |
-| `db.js`, `db-worker.js` | SQLite schema and queries |
+| `db.js` | Supabase auth, queries and photo storage |
 | `icons.js` | Lucide icons (ISC) |
 | `sw.js`, `manifest.webmanifest`, `icons/`, `screenshots/` | Offline support and installability |
-| `vendor/` | SQLite WASM 3.50.4 (public domain), Fira fonts (OFL) |
+| `vendor/` | supabase-js 2.118.0 (MIT), Fira fonts (OFL) |

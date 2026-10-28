@@ -1,58 +1,65 @@
-// Main-thread API over the SQLite worker. Records come back in the shape the views use:
-// { id, carId, date, odometer, workshop, location, notes, items: [{type, note, cost}], photoCount }.
-const worker = new Worker(new URL('./db-worker.js', import.meta.url), { type: 'module' });
-const pending = new Map();
-let seq = 0;
-worker.onmessage = ({ data: { id, result, error } }) => {
-  const p = pending.get(id);
-  pending.delete(id);
-  error ? p.reject(new Error(error)) : p.resolve(result);
-};
-worker.onerror = e => { for (const p of pending.values()) p.reject(new Error(e.message || 'Database worker failed')); pending.clear(); };
-const call = msg => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); worker.postMessage({ id, ...msg }); });
+// Supabase (Postgres) backend. Row-level security limits every query to the signed-in user's rows,
+// so the publishable key below is safe to ship in the page.
+const sb = window.supabase.createClient('https://zqsuxefvtgkizjoptqpq.supabase.co', 'sb_publishable_usxfBggvd94xjdFGiSbpOw_49lutCwR');
+const BUCKET = 'bills'; // private storage bucket, files live under "<user_id>/<record_id>/"
 
-export const query = (sql, bind) => call({ op: 'query', sql, bind });
-const tx = statements => call({ op: 'tx', statements });
+const ok = ({ data, error }) => { if (error) throw error; return data; };
 const n = v => v === '' || v === undefined || v === null || isNaN(+v) ? null : +v;
+const removeFiles = async paths => { if (paths.length) ok(await sb.storage.from(BUCKET).remove(paths)); };
 
-export const cars = () => query(`SELECT id, name, plate, make, model, year, odometer, odometer_date AS odometerDate FROM cars ORDER BY name COLLATE NOCASE`);
+// ---------- auth ----------
+export const session = async () => ok(await sb.auth.getSession()).session;
+export const signIn = async (email, password) => ok(await sb.auth.signInWithPassword({ email, password }));
+export const signUp = async (email, password) =>
+  ok(await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }));
+export const signOut = () => sb.auth.signOut({ scope: 'local' }); // this device only
+export const onAuthChange = cb => sb.auth.onAuthStateChange(event => (event === 'SIGNED_IN' || event === 'SIGNED_OUT') && setTimeout(cb));
 
-export async function records() {
-  const [recs, items] = await Promise.all([
-    query(`SELECT r.id, r.car_id AS carId, r.date, r.odometer, r.workshop, r.location, r.notes,
-             (SELECT count(*) FROM photos p WHERE p.record_id = r.id) AS photoCount
-           FROM records r ORDER BY r.date DESC`),
-    query('SELECT record_id AS recordId, type, note, cost FROM items ORDER BY record_id, pos'),
-  ]);
-  const byRecord = {};
-  for (const { recordId, ...it } of items) (byRecord[recordId] ||= []).push(it);
-  return recs.map(r => ({ ...r, items: byRecord[r.id] || [] }));
+// ---------- data ----------
+export const cars = async () =>
+  ok(await sb.from('cars').select('id, name, plate, make, model, year, odometer, odometerDate:odometer_date').order('name'));
+
+export const records = async () =>
+  ok(await sb.from('records').select('id, carId:car_id, date, odometer, workshop, location, notes, items, photos').order('date', { ascending: false }))
+    .map(r => ({ ...r, photoCount: r.photos.length }));
+
+// Downloads a record's bill photos as Blobs tagged with their storage path, so saveRecord can tell kept from new.
+export async function photos(recordId) {
+  const row = ok(await sb.from('records').select('photos').eq('id', recordId).maybeSingle());
+  return Promise.all((row?.photos || []).map(async path => Object.assign(ok(await sb.storage.from(BUCKET).download(path)), { path })));
 }
 
-export const photos = async recordId =>
-  (await query('SELECT mime, data FROM photos WHERE record_id = ? ORDER BY pos', [recordId])).map(p => new Blob([p.data], { type: p.mime }));
+export const saveCar = async c => ok(await sb.from('cars').upsert({
+  id: c.id, name: c.name, plate: c.plate || null, make: c.make || null, model: c.model || null,
+  year: n(c.year), odometer: n(c.odometer), odometer_date: c.odometerDate || null,
+}));
 
-export const saveCar = c => tx([[
-  `INSERT INTO cars (id, name, plate, make, model, year, odometer, odometer_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-   ON CONFLICT(id) DO UPDATE SET name = excluded.name, plate = excluded.plate, make = excluded.make, model = excluded.model,
-     year = excluded.year, odometer = excluded.odometer, odometer_date = excluded.odometer_date`,
-  [c.id, c.name, c.plate || null, c.make || null, c.model || null, n(c.year), n(c.odometer), c.odometerDate || null]]]);
-
-// Upsert (not INSERT OR REPLACE): REPLACE deletes the row first, which would cascade-delete its items/photos.
+// Uploads new photos first, then saves the row (with its items) in one request, then removes dropped photos.
+// A failure part-way leaves at worst an orphaned file, never a record pointing at a missing one.
 export async function saveRecord(r, photoBlobs) {
-  const pics = await Promise.all(photoBlobs.map(async b => [b.type || 'image/jpeg', new Uint8Array(await b.arrayBuffer())]));
-  return tx([
-    [`INSERT INTO records (id, car_id, date, odometer, workshop, location, notes) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET car_id = excluded.car_id, date = excluded.date, odometer = excluded.odometer,
-        workshop = excluded.workshop, location = excluded.location, notes = excluded.notes`,
-     [r.id, r.carId, r.date, n(r.odometer), r.workshop || null, r.location || null, r.notes || null]],
-    ['DELETE FROM items WHERE record_id = ?', [r.id]],
-    ...r.items.map((it, i) => ['INSERT INTO items (record_id, pos, type, note, cost) VALUES (?, ?, ?, ?, ?)', [r.id, i, it.type, it.note || null, n(it.cost)]]),
-    ['DELETE FROM photos WHERE record_id = ?', [r.id]],
-    ...pics.map(([mime, data], i) => ['INSERT INTO photos (record_id, pos, mime, data) VALUES (?, ?, ?, ?)', [r.id, i, mime, data]]),
-  ]);
+  const userId = (await session()).user.id;
+  const old = ok(await sb.from('records').select('photos').eq('id', r.id).maybeSingle())?.photos || [];
+  const paths = [];
+  for (const b of photoBlobs) {
+    if (b.path) { paths.push(b.path); continue; }
+    const type = b.type || 'image/jpeg', path = `${userId}/${r.id}/${crypto.randomUUID()}.${type.split('/')[1]}`;
+    ok(await sb.storage.from(BUCKET).upload(path, b, { contentType: type }));
+    paths.push(path);
+  }
+  ok(await sb.from('records').upsert({
+    id: r.id, car_id: r.carId, date: r.date, odometer: n(r.odometer),
+    workshop: r.workshop || null, location: r.location || null, notes: r.notes || null,
+    items: r.items.map(i => ({ type: i.type, note: i.note || null, cost: n(i.cost) })), photos: paths,
+  }));
+  await removeFiles(old.filter(p => !paths.includes(p)));
 }
 
-export const deleteCar = id => tx([['DELETE FROM cars WHERE id = ?', [id]]]);
-export const deleteRecord = id => tx([['DELETE FROM records WHERE id = ?', [id]]]);
-export const exportFile = () => call({ op: 'export' });
+export async function deleteRecord(id) {
+  await removeFiles(ok(await sb.from('records').delete().eq('id', id).select('photos')).flatMap(r => r.photos));
+}
+
+export async function deleteCar(id) {
+  const recs = ok(await sb.from('records').select('photos').eq('car_id', id));
+  ok(await sb.from('cars').delete().eq('id', id)); // records cascade in the database
+  await removeFiles(recs.flatMap(r => r.photos));
+}
